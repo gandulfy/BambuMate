@@ -21,6 +21,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(stl_watcher::StlWatcherState::new())
         .invoke_handler(tauri::generate_handler![
             commands::keychain::set_api_key,
@@ -31,6 +33,8 @@ pub fn run() {
             commands::config::get_feature_flags,
             commands::config::check_setup_complete,
             commands::health::run_health_check,
+            commands::health::search_bambu_studio_config,
+            commands::health::validate_bambu_studio_path,
             commands::models::list_models,
             commands::profile::list_profiles,
             commands::profile::list_system_profiles,
