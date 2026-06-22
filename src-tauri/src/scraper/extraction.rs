@@ -662,15 +662,17 @@ async fn call_openrouter(
 
 /// Call a local OpenAI-compatible server (LM Studio, Ollama, etc.).
 /// Uses json_object mode with prompt-based enforcement.
-/// The `api_key` argument is typically empty for local servers; when provided
-/// it will be sent as a Bearer token (some local servers optionally require it).
+/// The `api_key` argument contains the local server base URL (e.g. "http://localhost:1234").
 async fn call_local(
     api_key: &str,
     model: &str,
     prompt: &str,
 ) -> Result<String, String> {
-    let base_url = std::env::var("BAMBUMATE_LOCAL_URL")
-        .unwrap_or_else(|_| "http://localhost:1234".to_string());
+    let base_url = if api_key.is_empty() {
+        "http://localhost:1234"
+    } else {
+        api_key
+    };
     let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
 
     let client = build_api_client()?;
@@ -687,13 +689,9 @@ async fn call_local(
         }
     });
 
-    let mut req = client
+    let req = client
         .post(&url)
         .header("content-type", "application/json");
-
-    if !api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", api_key));
-    }
 
     let response = req
         .json(&body)

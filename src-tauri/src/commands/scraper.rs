@@ -35,10 +35,19 @@ fn get_ai_model(app: &tauri::AppHandle) -> Result<String, String> {
 }
 
 /// Get the API key from the system keychain for the given provider.
-/// For the "local" provider, returns an empty string (no key needed).
-fn get_api_key_for_provider(provider: &str) -> Result<String, String> {
+/// For the "local" provider, returns the configured local server URL
+/// (used by the extraction layer to connect to the server).
+fn get_api_key_for_provider(app: &tauri::AppHandle, provider: &str) -> Result<String, String> {
     if provider == "local" {
-        return Ok(String::new());
+        // Return the local server URL so the extraction layer knows where to connect
+        let store = app.store("preferences.json").ok();
+        return Ok(store
+            .and_then(|s| {
+                s.get("local_mcp_url")
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or_else(|| "http://localhost:1234".to_string()));
     }
     let service = match provider {
         "claude" => "bambumate-claude-api",
@@ -80,7 +89,7 @@ pub async fn search_filament(
 
     let provider = get_ai_provider(&app)?;
     let model = get_ai_model(&app)?;
-    let api_key = get_api_key_for_provider(&provider)?;
+    let api_key = get_api_key_for_provider(&app, &provider)?;
     let cache_dir = get_cache_dir(&app)?;
 
     info!(
@@ -127,7 +136,7 @@ pub async fn extract_specs_from_url(
 
     let provider = get_ai_provider(&app)?;
     let model = get_ai_model(&app)?;
-    let api_key = get_api_key_for_provider(&provider)?;
+    let api_key = get_api_key_for_provider(&app, &provider)?;
     let cache_dir = get_cache_dir(&app)?;
 
     // Fetch the raw HTML
@@ -274,7 +283,7 @@ pub async fn generate_specs_from_ai(
 
     let provider = get_ai_provider(&app)?;
     let model = get_ai_model(&app)?;
-    let api_key = get_api_key_for_provider(&provider)?;
+    let api_key = get_api_key_for_provider(&app, &provider)?;
     let cache_dir = get_cache_dir(&app)?;
 
     // Check cache first
@@ -329,7 +338,7 @@ pub async fn fetch_filament_from_catalog(
 
     let provider = get_ai_provider(&app)?;
     let model = get_ai_model(&app)?;
-    let api_key = get_api_key_for_provider(&provider)?;
+    let api_key = get_api_key_for_provider(&app, &provider)?;
     let cache_dir = get_cache_dir(&app)?;
 
     // Check cache first with a normalized key

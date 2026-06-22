@@ -408,14 +408,18 @@ async fn call_openrouter_vision(
 }
 
 /// Call a local OpenAI-compatible vision API (LM Studio, Ollama, etc.).
+/// The `api_key` argument contains the local server base URL (e.g. "http://localhost:1234").
 async fn call_local_vision(
     api_key: &str,
     model: &str,
     prompt: &str,
     base64_image: &str,
 ) -> Result<String, String> {
-    let base_url = std::env::var("BAMBUMATE_LOCAL_URL")
-        .unwrap_or_else(|_| "http://localhost:1234".to_string());
+    let base_url = if api_key.is_empty() {
+        "http://localhost:1234"
+    } else {
+        api_key
+    };
     let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
 
     let client = build_api_client()?;
@@ -444,15 +448,9 @@ async fn call_local_vision(
         }
     });
 
-    let mut req = client
+    let response = client
         .post(&url)
-        .header("content-type", "application/json");
-
-    if !api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", api_key));
-    }
-
-    let response = req
+        .header("content-type", "application/json")
         .json(&body)
         .send()
         .await

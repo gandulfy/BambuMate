@@ -347,9 +347,14 @@ fn get_ai_settings(app: &tauri::AppHandle) -> Result<(String, String, String), S
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| default_model.to_string());
 
-    // Local provider doesn't need an API key
+    // Local provider passes the server URL as the "api_key"
     if provider == "local" {
-        return Ok((provider, model, String::new()));
+        let local_url = store
+            .get("local_mcp_url")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "http://localhost:1234".to_string());
+        return Ok((provider, model, local_url));
     }
 
     // Get API key from keychain
