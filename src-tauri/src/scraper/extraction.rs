@@ -48,9 +48,10 @@ pub async fn extract_specs(
         "openai" => call_openai(api_key, model, &prompt, &schema).await?,
         "kimi" => call_kimi(api_key, model, &prompt).await?,
         "openrouter" => call_openrouter(api_key, model, &prompt, &schema).await?,
+        "local" => call_local(api_key, model, &prompt).await?,
         _ => {
             let msg = format!(
-                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter",
+                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter, local",
                 provider
             );
             error!("{}", msg);
@@ -131,9 +132,10 @@ pub async fn extract_specs_from_html(
         "openai" => call_openai(api_key, model, &prompt, &schema).await?,
         "kimi" => call_kimi(api_key, model, &prompt).await?,
         "openrouter" => call_openrouter(api_key, model, &prompt, &schema).await?,
+        "local" => call_local(api_key, model, &prompt).await?,
         _ => {
             let msg = format!(
-                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter",
+                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter, local",
                 provider
             );
             error!("{}", msg);
@@ -218,9 +220,10 @@ pub async fn generate_specs_from_knowledge(
         "openai" => call_openai(api_key, model, &prompt, &schema).await?,
         "kimi" => call_kimi(api_key, model, &prompt).await?,
         "openrouter" => call_openrouter(api_key, model, &prompt, &schema).await?,
+        "local" => call_local(api_key, model, &prompt).await?,
         _ => {
             let msg = format!(
-                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter",
+                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter, local",
                 provider
             );
             error!("{}", msg);
@@ -652,6 +655,79 @@ async fn call_openrouter(
         .map(|s| s.to_string())
         .ok_or_else(|| {
             let msg = "No content in OpenRouter API response".to_string();
+            error!("{}", msg);
+            msg
+        })
+}
+
+/// Call a local OpenAI-compatible server (LM Studio, Ollama, etc.).
+/// Uses json_object mode with prompt-based enforcement.
+/// The `api_key` argument is typically empty for local servers; when provided
+/// it will be sent as a Bearer token (some local servers optionally require it).
+async fn call_local(
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    let base_url = std::env::var("BAMBUMATE_LOCAL_URL")
+        .unwrap_or_else(|_| "http://localhost:1234".to_string());
+    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+
+    let client = build_api_client()?;
+
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 2048,
+        "messages": [
+            {"role": "system", "content": "You are a filament specification extraction assistant. Always respond with valid JSON only, no markdown formatting or code blocks."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {
+            "type": "json_object"
+        }
+    });
+
+    let mut req = client
+        .post(&url)
+        .header("content-type", "application/json");
+
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let response = req
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            let msg = if e.is_timeout() {
+                "LLM API timeout after 60s for local server".to_string()
+            } else if e.is_connect() {
+                format!(
+                    "Cannot connect to local server at {}. Is your local model server running?",
+                    base_url
+                )
+            } else {
+                format!("LLM API request failed for local server: {}", e)
+            };
+            error!("{}", msg);
+            msg
+        })?;
+
+    let body_text = handle_api_response(response, "local").await?;
+
+    // Parse response (OpenAI-compatible format)
+    let resp_json: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
+        let msg = format!("Failed to parse local server response: {}", e);
+        error!("{}", msg);
+        msg
+    })?;
+
+    resp_json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            let msg = "No content in local server response".to_string();
             error!("{}", msg);
             msg
         })

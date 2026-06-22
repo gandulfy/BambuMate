@@ -339,12 +339,18 @@ fn get_ai_settings(app: &tauri::AppHandle) -> Result<(String, String, String), S
         "openai" => "gpt-4o",
         "kimi" => "moonshot-v1-128k",
         "openrouter" => "anthropic/claude-sonnet-4",
+        "local" => "default",
         _ => "claude-sonnet-4-20250514",
     };
     let model = store
         .get("ai_model")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| default_model.to_string());
+
+    // Local provider doesn't need an API key
+    if provider == "local" {
+        return Ok((provider, model, String::new()));
+    }
 
     // Get API key from keychain
     let service = match provider.as_str() {

@@ -29,6 +29,7 @@ pub fn run() {
             commands::config::get_preference,
             commands::config::set_preference,
             commands::config::get_feature_flags,
+            commands::config::check_setup_complete,
             commands::health::run_health_check,
             commands::models::list_models,
             commands::profile::list_profiles,

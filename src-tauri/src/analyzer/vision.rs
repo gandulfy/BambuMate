@@ -51,9 +51,10 @@ pub async fn analyze_image(
         "openrouter" => {
             call_openrouter_vision(api_key, model, &prompt, &base64_image, &schema).await?
         }
+        "local" => call_local_vision(api_key, model, &prompt, &base64_image).await?,
         _ => {
             let msg = format!(
-                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter",
+                "Unsupported AI provider: '{}'. Supported: claude, openai, kimi, openrouter, local",
                 provider
             );
             error!("{}", msg);
@@ -404,6 +405,79 @@ async fn call_openrouter_vision(
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "No content in OpenRouter vision response".to_string())
+}
+
+/// Call a local OpenAI-compatible vision API (LM Studio, Ollama, etc.).
+async fn call_local_vision(
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+    base64_image: &str,
+) -> Result<String, String> {
+    let base_url = std::env::var("BAMBUMATE_LOCAL_URL")
+        .unwrap_or_else(|_| "http://localhost:1234".to_string());
+    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+
+    let client = build_api_client()?;
+
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{};base64,{}", image_media_type(), base64_image),
+                        "detail": "low"
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": prompt
+                }
+            ]
+        }],
+        "response_format": {
+            "type": "json_object"
+        }
+    });
+
+    let mut req = client
+        .post(&url)
+        .header("content-type", "application/json");
+
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let response = req
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Vision API timeout after 90s for local server".to_string()
+            } else if e.is_connect() {
+                format!(
+                    "Cannot connect to local server at {}. Is your local model server running?",
+                    base_url
+                )
+            } else {
+                format!("Vision API request failed for local server: {}", e)
+            }
+        })?;
+
+    let body_text = handle_api_response(response, "local").await?;
+
+    let resp_json: serde_json::Value = serde_json::from_str(&body_text)
+        .map_err(|e| format!("Failed to parse local server response: {}", e))?;
+
+    resp_json["choices"][0]["message"]["content"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No content in local server vision response".to_string())
 }
 
 #[cfg(test)]

@@ -35,13 +35,17 @@ fn get_ai_model(app: &tauri::AppHandle) -> Result<String, String> {
 }
 
 /// Get the API key from the system keychain for the given provider.
+/// For the "local" provider, returns an empty string (no key needed).
 fn get_api_key_for_provider(provider: &str) -> Result<String, String> {
+    if provider == "local" {
+        return Ok(String::new());
+    }
     let service = match provider {
         "claude" => "bambumate-claude-api",
         "openai" => "bambumate-openai-api",
         "kimi" => "bambumate-kimi-api",
         "openrouter" => "bambumate-openrouter-api",
-        _ => return Err(format!("Unknown AI provider: '{}'. Supported: claude, openai, kimi, openrouter", provider)),
+        _ => return Err(format!("Unknown AI provider: '{}'. Supported: claude, openai, kimi, openrouter, local", provider)),
     };
     let entry = Entry::new(service, "bambumate").map_err(|e| e.to_string())?;
     match entry.get_password() {
