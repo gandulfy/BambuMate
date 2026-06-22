@@ -28,6 +28,29 @@ pub async fn get_feature_flags() -> Result<FeatureFlags, String> {
     serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
 }
 
+// -- Setup Status --
+
+/// Status of the initial setup wizard.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetupStatus {
+    pub bambu_studio_path: Option<String>,
+    pub ai_provider: Option<String>,
+    pub has_api_key: bool,
+    pub setup_complete: bool,
+}
+
+/// Check whether the initial setup wizard has been completed.
+pub async fn check_setup_complete() -> Result<SetupStatus, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({}))
+        .map_err(|e| e.to_string())?;
+
+    let result = invoke("check_setup_complete", args)
+        .await
+        .map_err(|e| e.as_string().unwrap_or_else(|| "Unknown error".to_string()))?;
+
+    serde_wasm_bindgen::from_value(result).map_err(|e| e.to_string())
+}
+
 // -- Arg structs for serialization --
 
 #[derive(Serialize)]

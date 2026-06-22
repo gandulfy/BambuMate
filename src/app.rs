@@ -13,6 +13,7 @@ use crate::pages::print_analysis::PrintAnalysisPage;
 use crate::pages::profile_diff::ProfileDiffPage;
 use crate::pages::profile_management::ProfileManagementPage;
 use crate::pages::settings::SettingsPage;
+use crate::pages::setup_wizard::SetupWizard;
 use crate::theme::{apply_theme, ThemeContext};
 
 /// Shared context for feature flags, reactive so UI updates on toggle.
@@ -34,7 +35,10 @@ pub fn App() -> impl IntoView {
     });
     provide_context(FeatureFlagsContext { flags, set_flags });
 
-    // Load saved theme and feature flags on mount
+    // Setup wizard state: None = loading, Some(true) = complete, Some(false) = show wizard
+    let setup_complete = RwSignal::new(Option::<bool>::None);
+
+    // Load saved theme and feature flags on mount, and check setup status
     Effect::new(move |_| {
         spawn_local(async move {
             if let Ok(Some(saved)) = commands::get_preference("theme").await {
@@ -42,6 +46,11 @@ pub fn App() -> impl IntoView {
             }
             if let Ok(loaded_flags) = commands::get_feature_flags().await {
                 set_flags.set(loaded_flags);
+            }
+            // Check setup status
+            match commands::check_setup_complete().await {
+                Ok(status) => setup_complete.set(Some(status.setup_complete)),
+                Err(_) => setup_complete.set(Some(false)),
             }
         });
     });
@@ -52,23 +61,35 @@ pub fn App() -> impl IntoView {
         apply_theme(&t);
     });
 
+    let on_wizard_complete = Callback::new(move |()| {
+        setup_complete.set(Some(true));
+    });
+
     view! {
         <Router>
-            <div class="app-layout">
-                <Sidebar />
-                <main class="content">
-                    <Routes fallback=|| view! { <p>"Page not found"</p> }>
-                        <Route path=path!("/") view=HomePage />
-                        <Route path=path!("/filament") view=FilamentSearchPage />
-                        <Route path=path!("/analysis") view=PrintAnalysisPage />
-                        <Route path=path!("/profiles") view=ProfileManagementPage />
-                        <Route path=path!("/batch") view=BatchGeneratePage />
-                        <Route path=path!("/compare") view=ProfileDiffPage />
-                        <Route path=path!("/settings") view=SettingsPage />
-                        <Route path=path!("/health") view=HealthPage />
-                    </Routes>
-                </main>
-            </div>
+            // Show wizard overlay if setup is not complete
+            <Show when=move || setup_complete.get() == Some(false)>
+                <SetupWizard on_complete=on_wizard_complete.clone() />
+            </Show>
+
+            // Show main app when setup is complete (or still loading)
+            <Show when=move || setup_complete.get() != Some(false)>
+                <div class="app-layout">
+                    <Sidebar />
+                    <main class="content">
+                        <Routes fallback=|| view! { <p>"Page not found"</p> }>
+                            <Route path=path!("/") view=HomePage />
+                            <Route path=path!("/filament") view=FilamentSearchPage />
+                            <Route path=path!("/analysis") view=PrintAnalysisPage />
+                            <Route path=path!("/profiles") view=ProfileManagementPage />
+                            <Route path=path!("/batch") view=BatchGeneratePage />
+                            <Route path=path!("/compare") view=ProfileDiffPage />
+                            <Route path=path!("/settings") view=SettingsPage />
+                            <Route path=path!("/health") view=HealthPage />
+                        </Routes>
+                    </main>
+                </div>
+            </Show>
         </Router>
     }
 }
