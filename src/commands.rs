@@ -1396,7 +1396,7 @@ pub async fn reset_to_clean_install() -> Result<(), String> {
     invoke("reset_to_clean_install", args)
         .await
         .map(|_| ())
-        .map_err(|e| e.as_string().unwrap_or_else(|| "Unknown error".to_string()))
+        .map_err(|e| e.as_string().unwrap_or_else(|| "Failed to reset to clean install".to_string()))
 }
 
 // -- Search Base Profiles --

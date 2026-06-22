@@ -436,7 +436,7 @@ select.input option {
 }
 
 .btn-danger:hover:not(:disabled) {
-    background-color: #c53030;
+    background-color: var(--bg-danger-hover);
 }
 
 .settings-section-danger {

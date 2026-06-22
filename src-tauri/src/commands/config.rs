@@ -160,6 +160,7 @@ pub fn reset_to_clean_install(app: AppHandle) -> Result<(), String> {
     info!("Preferences store cleared");
 
     // Delete all API keys from the system keychain
+    let mut keychain_errors = Vec::new();
     for service in KEYCHAIN_SERVICES {
         match keyring::Entry::new(service, "bambumate") {
             Ok(entry) => match entry.delete_credential() {
@@ -169,12 +170,23 @@ pub fn reset_to_clean_install(app: AppHandle) -> Result<(), String> {
                 }
                 Err(e) => {
                     warn!("Failed to delete keychain entry {}: {}", service, e);
+                    keychain_errors.push(format!("{}: {}", service, e));
                 }
             },
             Err(e) => {
                 warn!("Failed to access keychain for {}: {}", service, e);
+                keychain_errors.push(format!("{}: {}", service, e));
             }
         }
+    }
+
+    if !keychain_errors.is_empty() {
+        let msg = format!(
+            "Reset completed but some API keys could not be removed: {}",
+            keychain_errors.join("; ")
+        );
+        warn!("{}", msg);
+        return Err(msg);
     }
 
     info!("Clean install reset complete");
