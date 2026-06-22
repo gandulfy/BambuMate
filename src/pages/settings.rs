@@ -19,6 +19,8 @@ pub fn SettingsPage() -> impl IntoView {
     let (models_loading, set_models_loading) = signal(false);
     let (models_error, set_models_error) = signal::<Option<String>>(None);
     let (prefs_loaded, set_prefs_loaded) = signal(false);
+    let (local_url, set_local_url) = signal("http://localhost:1234".to_string());
+    let (local_url_status, set_local_url_status) = signal::<Option<String>>(None);
 
     let theme_ctx = use_context::<ThemeContext>().expect("ThemeContext not provided");
     let ff_ctx = use_context::<FeatureFlagsContext>().expect("FeatureFlagsContext not provided");
@@ -48,6 +50,13 @@ pub fn SettingsPage() -> impl IntoView {
             match commands::get_preference("ai_model").await {
                 Ok(Some(model)) => {
                     set_ai_model.set(model);
+                }
+                Ok(None) => {}
+                Err(_) => {}
+            }
+            match commands::get_preference("local_mcp_url").await {
+                Ok(Some(url)) => {
+                    set_local_url.set(url);
                 }
                 Ok(None) => {}
                 Err(_) => {}
@@ -146,6 +155,16 @@ pub fn SettingsPage() -> impl IntoView {
         });
     };
 
+    let save_local_url = move |_| {
+        let url = local_url.get();
+        spawn_local(async move {
+            match commands::set_preference("local_mcp_url", &url).await {
+                Ok(()) => set_local_url_status.set(Some("Local server URL saved".to_string())),
+                Err(e) => set_local_url_status.set(Some(format!("Failed: {}", e))),
+            }
+        });
+    };
+
     let on_toggle_profiles = move |ev: leptos::ev::Event| {
         let checked = event_target_checked(&ev);
         let value = if checked { "true" } else { "false" };
@@ -234,21 +253,33 @@ pub fn SettingsPage() -> impl IntoView {
                     service_id="bambumate-claude-api"
                     placeholder="sk-ant-..."
                 />
+                <span class="status-text">
+                    <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noopener noreferrer">"Get Claude API key"</a>
+                </span>
                 <ApiKeyForm
                     service_name="OpenAI API Key"
                     service_id="bambumate-openai-api"
                     placeholder="sk-..."
                 />
+                <span class="status-text">
+                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">"Get OpenAI API key"</a>
+                </span>
                 <ApiKeyForm
                     service_name="Kimi K2 API Key"
                     service_id="bambumate-kimi-api"
                     placeholder="sk-..."
                 />
+                <span class="status-text">
+                    <a href="https://platform.moonshot.cn/console/api-keys" target="_blank" rel="noopener noreferrer">"Get Kimi API key"</a>
+                </span>
                 <ApiKeyForm
                     service_name="OpenRouter API Key"
                     service_id="bambumate-openrouter-api"
                     placeholder="sk-or-..."
                 />
+                <span class="status-text">
+                    <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">"Get OpenRouter API key"</a>
+                </span>
             </section>
 
             <section class="settings-section">
@@ -269,8 +300,32 @@ pub fn SettingsPage() -> impl IntoView {
                         <option value="openai" selected=move || ai_provider.get() == "openai">"OpenAI"</option>
                         <option value="kimi" selected=move || ai_provider.get() == "kimi">"Kimi K2 (Moonshot)"</option>
                         <option value="openrouter" selected=move || ai_provider.get() == "openrouter">"OpenRouter"</option>
+                        <option value="local" selected=move || ai_provider.get() == "local">"Local Server"</option>
                     </select>
                 </div>
+
+                <Show when=move || ai_provider.get() == "local">
+                    <div class="form-group">
+                        <label for="local-url">"Local Server URL"</label>
+                        <p class="section-description">"URL of your OpenAI-compatible local server (LM Studio, Ollama, llama.cpp, etc.)."</p>
+                        <div class="input-row">
+                            <input
+                                id="local-url"
+                                type="text"
+                                placeholder="http://localhost:1234"
+                                class="input"
+                                prop:value=move || local_url.get()
+                                on:input=move |ev| {
+                                    set_local_url.set(event_target_value(&ev));
+                                }
+                            />
+                            <button class="btn btn-save" on:click=save_local_url>"Save"</button>
+                        </div>
+                        <Show when=move || local_url_status.get().is_some()>
+                            <span class="status-text">{move || local_url_status.get().unwrap_or_default()}</span>
+                        </Show>
+                    </div>
+                </Show>
 
                 <div class="form-group">
                     <label for="ai-model">"Model"</label>
