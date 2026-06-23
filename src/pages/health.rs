@@ -43,13 +43,37 @@ pub fn HealthPage() -> impl IntoView {
                 "Verify that BambuMate can access all required services and directories."
             </p>
 
-            <button
-                class="btn btn-primary"
-                on:click=run_check
-                disabled=move || checking.get()
-            >
-                {move || if checking.get() { "Checking..." } else { "Run Health Check" }}
-            </button>
+            <div class="health-actions">
+                <button
+                    class="btn btn-primary"
+                    on:click=run_check
+                    disabled=move || checking.get()
+                >
+                    {move || if checking.get() { "Checking..." } else { "Run Health Check" }}
+                </button>
+
+                <button
+                    class="btn btn-secondary"
+                    on:click=move |_| {
+                        let set_err = set_error.clone();
+                        spawn_local(async move {
+                            set_err.set(None);
+                            match crate::commands::build_and_launch_app(false).await {
+                                Ok(path) => {
+                                    // no-op: could show a toast later
+                                    tracing::info!("Launched built app: {}", path);
+                                }
+                                Err(e) => {
+                                    set_err.set(Some(format!("Build & launch failed: {}", e)));
+                                }
+                            }
+                        })
+                    }
+                >
+                    "Build & Run App"
+                </button>
+
+            </div>
 
             {move || {
                 error.get().map(|e| {

@@ -382,3 +382,62 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(&url, None::<&str>)
         .map_err(|e| format!("Failed to open URL: {}", e))
 }
+
+/// Build the Tauri application (cargo build) and launch the resulting binary.
+/// If `release` is true, builds with --release and launches the release binary.
+#[tauri::command]
+pub async fn build_and_launch_app(release: bool) -> Result<String, String> {
+    use std::process::Command;
+    use std::path::PathBuf;
+
+    // Run the build in a blocking thread to avoid blocking the async runtime
+    let res = std::thread::spawn(move || {
+        // Determine build directory: prefer current dir if it contains Cargo.toml, else try ./src-tauri
+        let mut cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if !cwd.join("Cargo.toml").exists() {
+            let candidate = cwd.join("src-tauri");
+            if candidate.join("Cargo.toml").exists() {
+                cwd = candidate;
+            }
+        }
+
+        // Build command
+        let mut build_cmd = Command::new("cargo");
+        build_cmd.arg("build");
+        if release {
+            build_cmd.arg("--release");
+        }
+        build_cmd.current_dir(&cwd);
+
+        let status = build_cmd
+            .status()
+            .map_err(|e| format!("Failed to spawn cargo build: {}", e))?;
+
+        if !status.success() {
+            return Err(format!("cargo build failed with status: {}", status));
+        }
+
+        // Determine binary path
+        let target_dir = cwd.join("target").join(if release { "release" } else { "debug" });
+        // Binary name (platform-specific)
+        let bin_name = if cfg!(windows) { "bambumate-tauri.exe" } else { "bambumate-tauri" };
+        let bin_path = target_dir.join(bin_name);
+        if !bin_path.exists() {
+            return Err(format!("Built binary not found at {}", bin_path.display()));
+        }
+
+        // Launch the binary
+        Command::new(bin_path.clone())
+            .spawn()
+            .map_err(|e| format!("Failed to launch built binary: {}", e))?;
+
+        Ok(bin_path.to_string_lossy().to_string())
+    })
+    .join();
+
+    match res {
+        Ok(Ok(path)) => Ok(path),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(format!("Build thread panicked: {:?}", e)),
+    }
+}
