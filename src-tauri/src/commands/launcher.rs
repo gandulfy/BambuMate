@@ -20,7 +20,25 @@ pub struct LaunchResult {
 /// Note: The "bambu_studio_path" preference stores the CONFIG DIRECTORY,
 /// not the application binary path.
 #[tauri::command]
-pub async fn detect_bambu_studio_path(_app: tauri::AppHandle) -> Result<String, String> {
+pub async fn detect_bambu_studio_path(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_store::StoreExt;
+
+    // 0. If the user saved a "bambu_studio_path" preference (config dir), try to
+    //    infer the binary location from it before other searches. This allows the
+    //    Settings UI to accept the config directory and still let the app find
+    //    the BambuStudio executable.
+    if let Ok(store) = app.store("preferences.json") {
+        if let Some(pref_val) = store
+            .get("bambu_studio_path")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        {
+            let pref_path = std::path::Path::new(&pref_val);
+            if let Some(found) = find_bs_from_config_dir(pref_path) {
+                return Ok(found);
+            }
+        }
+    }
+
     // 1. Platform-specific default path
     if let Some(path) = default_bs_path() {
         if std::path::Path::new(&path).exists() {
@@ -69,7 +87,26 @@ pub async fn launch_bambu_studio(
 /// Note: The "bambu_studio_path" preference stores the CONFIG DIRECTORY
 /// (e.g., %APPDATA%\BambuStudio), not the application binary. We must not
 /// use it here. Instead, we search for the actual binary.
-fn resolve_bs_path(_app: &tauri::AppHandle) -> Result<String, String> {
+fn resolve_bs_path(app: &tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_store::StoreExt;
+
+    // 0. If the user saved a "bambu_studio_path" preference (config dir), try to
+    //    infer the binary location from it. Many users point to the config
+    //    directory (%APPDATA%\BambuStudio) when selecting the app in Settings.
+    //    Attempt to locate BambuStudio.exe relative to that directory before
+    //    falling back to global searches.
+    if let Ok(store) = app.store("preferences.json") {
+        if let Some(pref_val) = store
+            .get("bambu_studio_path")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        {
+            let pref_path = std::path::Path::new(&pref_val);
+            if let Some(found) = find_bs_from_config_dir(pref_path) {
+                return Ok(found);
+            }
+        }
+    }
+
     // 1. Platform-specific default path
     if let Some(path) = default_bs_path() {
         if std::path::Path::new(&path).exists() {
@@ -83,6 +120,57 @@ fn resolve_bs_path(_app: &tauri::AppHandle) -> Result<String, String> {
     }
 
     Err("Bambu Studio application not found. Please install Bambu Studio.".to_string())
+}
+
+/// Attempt to locate the BambuStudio binary by inspecting the provided
+/// configuration directory and nearby common locations. Returns Some(path)
+/// when found.
+fn find_bs_from_config_dir(config_dir: &std::path::Path) -> Option<String> {
+    use std::path::Path;
+
+    if !config_dir.exists() {
+        return None;
+    }
+
+    // Search upward through a few ancestor directories for a BambuStudio.exe
+    for ancestor in config_dir.ancestors().take(6) {
+        let cand = ancestor.join("BambuStudio.exe");
+        if cand.exists() {
+            return Some(cand.to_string_lossy().to_string());
+        }
+        let cand2 = ancestor.join("BambuStudio").join("BambuStudio.exe");
+        if cand2.exists() {
+            return Some(cand2.to_string_lossy().to_string());
+        }
+    }
+
+    // Check common user-level program locations relative to local app data
+    if let Some(local_data) = dirs::data_local_dir() {
+        let cand = local_data.join("Programs").join("BambuStudio").join("BambuStudio.exe");
+        if cand.exists() {
+            return Some(cand.to_string_lossy().to_string());
+        }
+        let cand2 = local_data.join("BambuStudio").join("BambuStudio.exe");
+        if cand2.exists() {
+            return Some(cand2.to_string_lossy().to_string());
+        }
+    }
+
+    // As a last resort, try looking at Program Files/Program Files (x86)
+    if let Ok(program_files) = std::env::var("ProgramFiles") {
+        let cand = std::path::Path::new(&program_files).join("BambuStudio").join("BambuStudio.exe");
+        if cand.exists() {
+            return Some(cand.to_string_lossy().to_string());
+        }
+    }
+    if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+        let cand = std::path::Path::new(&program_files_x86).join("BambuStudio").join("BambuStudio.exe");
+        if cand.exists() {
+            return Some(cand.to_string_lossy().to_string());
+        }
+    }
+
+    None
 }
 
 
