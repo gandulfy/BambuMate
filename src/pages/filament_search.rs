@@ -16,6 +16,7 @@ pub fn FilamentSearchPage() -> impl IntoView {
     // Catalog state
     let (catalog_status, set_catalog_status) = signal::<Option<CatalogStatus>>(None);
     let (is_refreshing_catalog, set_is_refreshing_catalog) = signal(false);
+    let (filament_ai_enabled, set_filament_ai_enabled) = signal(true);
 
     // Autocomplete state
     let (search_query, set_search_query) = signal(String::new());
@@ -54,9 +55,14 @@ pub fn FilamentSearchPage() -> impl IntoView {
     let (base_profile_specs, set_base_profile_specs) = signal::<Option<FilamentSpecs>>(None);
     let (show_merge_screen, set_show_merge_screen) = signal(false);
 
-    // Check catalog status on mount
+    // Check catalog status on mount and load AI preference
     Effect::new(move |_| {
         spawn_local(async move {
+            // Load AI mode preference
+            if let Ok(Some(val)) = commands::get_preference("filament_search_use_ai").await {
+                set_filament_ai_enabled.set(val != "false");
+            }
+
             match commands::get_catalog_status().await {
                 Ok(status) => {
                     set_catalog_status.set(Some(status.clone()));
@@ -371,7 +377,11 @@ pub fn FilamentSearchPage() -> impl IntoView {
 
             <h2>"Filament Search"</h2>
             <p class="page-description">
-                "Type to search from our catalog, or use AI to find any filament."
+                {move || if filament_ai_enabled.get() {
+                    "Type to search from our catalog, or use AI to find any filament."
+                } else {
+                    "🌐 Web-only mode — specs pulled from manufacturer sites. Enable AI in Settings for AI-powered search."
+                }}
             </p>
 
             // Catalog status
@@ -464,21 +474,25 @@ pub fn FilamentSearchPage() -> impl IntoView {
                             let query_len = search_query.get().len();
                             let has_catalog_matches = !suggestions.get().is_empty();
                             let show_ai_web = query_len >= 5 || !has_catalog_matches;
+                            let ai_on = filament_ai_enabled.get();
 
                             if show_ai_web {
                                 view! {
-                                    <div
-                                        class="ai-fallback-item"
-                                        on:mousedown=move |_| do_ai_generate()
-                                    >
-                                        <span class="ai-fallback-icon">"🤖"</span>
-                                        <span class="ai-fallback-text">
-                                            "Ask AI about \""
-                                            {move || search_query.get()}
-                                            "\""
-                                        </span>
-                                        <span class="ai-fallback-hint">"Recommended"</span>
-                                    </div>
+                                    <>
+                                    {if ai_on { Some(view! {
+                                        <div
+                                            class="ai-fallback-item"
+                                            on:mousedown=move |_| do_ai_generate()
+                                        >
+                                            <span class="ai-fallback-icon">"🤖"</span>
+                                            <span class="ai-fallback-text">
+                                                "Ask AI about \""
+                                                {move || search_query.get()}
+                                                "\""
+                                            </span>
+                                            <span class="ai-fallback-hint">"Recommended"</span>
+                                        </div>
+                                    })} else { None }}
                                     <div
                                         class="ai-fallback-item"
                                         on:mousedown=move |_| do_web_search()
@@ -487,8 +501,9 @@ pub fn FilamentSearchPage() -> impl IntoView {
                                         <span class="ai-fallback-text">
                                             "Search web for specs"
                                         </span>
-                                        <span class="ai-fallback-hint">"Scrape pages"</span>
+                                        <span class="ai-fallback-hint">{if ai_on { "Scrape pages" } else { "Web-only mode" }}</span>
                                     </div>
+                                    </>
                                 }.into_any()
                             } else {
                                 view! {
